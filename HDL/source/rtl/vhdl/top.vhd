@@ -250,6 +250,15 @@ begin
   --dir_red
   --dir_green
   --dir_blue
+  dir_red <= x"00" when dir_pixel_column < x"50" else --bela
+				 x"ff" when dir_pixel_column >= 80 and dir_pixel_column < 160 else --parametrizovati sa H_RES/4 (160) npr. --zuta
+				 x"00" when dir_pixel_column >= 160 and dir_pixel_column < 240 else --tirkizna
+				 x"00" when dir_pixel_column >=240 and dir_pixel_column < 320 else --zelena
+				 x"ff" when dir_pixel_column >=320 and dir_pixel_column < 400 else --roza
+				 x"ff" when dir_pixel_column >=400 and dir_pixel_column < 480 else --crvena
+				 x"00" when dir_pixel_column >=480 and dir_pixel_column < 560 else --plava
+				 x"ff" when dir_pixel_column >=560 and dir_pixel_column < 640 else --crna
+				 x"00";
  
   -- koristeci signale realizovati logiku koja pise po TXT_MEM
   --char_address
