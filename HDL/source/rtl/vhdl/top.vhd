@@ -21,9 +21,11 @@ entity top is
     GRAPH_MEM_DATA_WIDTH : natural := 32
     );
   port (
-    clk_i          : in  std_logic;
+    clk_i       : in  std_logic;
     reset_n_i      : in  std_logic;
     -- vga
+	 direct_mode_i : in std_logic;
+	 display_mode_i : in std_logic_vector(1 downto 0);
     vga_hsync_o    : out std_logic;
     vga_vsync_o    : out std_logic;
     blank_o        : out std_logic;
@@ -35,6 +37,9 @@ entity top is
     blue_o         : out std_logic_vector(7 downto 0)
    );
 end top;
+
+
+--entiti
 
 architecture rtl of top is
 
@@ -103,6 +108,19 @@ architecture rtl of top is
     );
   end component;
   
+  component reg
+	generic(
+		WIDTH    : positive := 1;
+		RST_INIT : integer := 0
+	);
+	port(
+		i_clk  : in  std_logic;
+		in_rst : in  std_logic;
+		i_d    : in  std_logic_vector(WIDTH-1 downto 0);
+		o_q    : out std_logic_vector(WIDTH-1 downto 0)
+	);
+  end component;
+  
   component ODDR2
   generic(
    DDR_ALIGNMENT : string := "NONE";
@@ -127,6 +145,9 @@ architecture rtl of top is
   constant GRAPH_MEM_ADDR_WIDTH : natural := MEM_ADDR_WIDTH + 6;-- graphics addres is scales with minumum char size 8*8 log2(64) = 6
   
   -- text
+  signal next_char_address : std_logic_vector(MEM_ADDR_WIDTH-1 downto 0);
+  --signal char_address : std_logic_vector(MEM_ADDR_WIDTH-1 downto 0);
+  
   signal message_lenght      : std_logic_vector(MEM_ADDR_WIDTH-1 downto 0);
   signal graphics_lenght     : std_logic_vector(GRAPH_MEM_ADDR_WIDTH-1 downto 0);
   
@@ -156,6 +177,10 @@ architecture rtl of top is
   signal dir_blue            : std_logic_vector(7 downto 0);
   signal dir_pixel_column    : std_logic_vector(10 downto 0);
   signal dir_pixel_row       : std_logic_vector(10 downto 0);
+  signal graph_addr_reg		  : std_logic_vector(GRAPH_MEM_ADDR_WIDTH - 1 downto 0);
+  signal next_pixel_address	  : std_logic_vector(GRAPH_MEM_ADDR_WIDTH - 1 downto 0);
+  --signal next_char_address	  : std_logic_vector(GRAPH_MEM_ADDR_WIDTH - 1 downto 0);
+  
 
 begin
 
@@ -168,14 +193,16 @@ begin
   graphics_lenght <= conv_std_logic_vector(MEM_SIZE*8*8, GRAPH_MEM_ADDR_WIDTH);
   
   -- removed to inputs pin
-  direct_mode <= '1';
-  display_mode     <= "10";  -- 01 - text mode, 10 - graphics mode, 11 - text & graphics
+  --direct_mode <= '1';
+  --display_mode     <= "10";  -- 01 - text mode, 10 - graphics mode, 11 - text & graphics
   
   font_size        <= x"1";
   show_frame       <= '1';
   foreground_color <= x"FFFFFF";
   background_color <= x"000000";
   frame_color      <= x"FF0000";
+  
+
 
   clk5m_inst : ODDR2
   generic map(
@@ -211,14 +238,14 @@ begin
     clk_i              => clk_i,
     reset_n_i          => reset_n_i,
     --
-    direct_mode_i      => direct_mode,
+    direct_mode_i      => direct_mode_i,
     dir_red_i          => dir_red,
     dir_green_i        => dir_green,
     dir_blue_i         => dir_blue,
     dir_pixel_column_o => dir_pixel_column,
     dir_pixel_row_o    => dir_pixel_row,
     -- cfg
-    display_mode_i     => display_mode,  -- 01 - text mode, 10 - graphics mode, 11 - text & graphics
+    display_mode_i     => display_mode_i,  -- 01 - text mode, 10 - graphics mode, 11 - text & graphics
     -- text mode interface
     text_addr_i        => char_address,
     text_data_i        => char_value,
@@ -246,6 +273,37 @@ begin
     blue_o             => blue_o     
   );
   
+
+  cnt_reg : reg
+  generic map(
+		WIDTH => MEM_ADDR_WIDTH,
+		RST_INIT => 0
+  )
+  
+  port map(
+		i_clk => pix_clock_s,
+		in_rst => vga_rst_n_s,
+		i_d => next_char_address,
+		o_q => char_address
+  );
+  
+  cnt_reg1 : reg
+  generic map(
+		WIDTH => GRAPH_MEM_ADDR_WIDTH,
+		RST_INIT => 0
+  )
+  
+  port map(
+  		i_clk => pix_clock_s,
+		in_rst => vga_rst_n_s,
+		i_d => next_pixel_address,
+		o_q => pixel_address
+  );
+  
+  next_char_address <= (others => '0') when char_address = 1199 else char_address+1;
+  
+  next_pixel_address <= (others => '0') when pixel_address = 1199 else pixel_address+1;
+  
   -- na osnovu signala iz vga_top modula dir_pixel_column i dir_pixel_row realizovati logiku koja genereise
   --dir_red
   --dir_green
@@ -259,16 +317,83 @@ begin
 				 x"00" when dir_pixel_column >=480 and dir_pixel_column < 560 else --plava
 				 x"ff" when dir_pixel_column >=560 and dir_pixel_column < 640 else --crna
 				 x"00";
+				 
+  --dir_red <= x"00" when dir_pixel_column < H_RES/8 else --bela
+				 --x"ff" when dir_pixel_column >= H_RES/8 and dir_pixel_column < H_RES/4 else --parametrizovati sa H_RES/4 (160) npr. --zuta
+				 --x"00" when dir_pixel_column >= H_RES/4 and dir_pixel_column < 3*(H_RES/8) else --tirkizna
+				 --x"00" when dir_pixel_column >=3(H_RES/8) and dir_pixel_column < H_RES/2 else --zelena
+				 --x"ff" when dir_pixel_column >=H_RES/2 and dir_pixel_column < 5*(H_RES/8) else --roza
+				 --x"ff" when dir_pixel_column >=5*(H_RES/8) and dir_pixel_column < 3*(H_RES/4) else --crvena
+				 --x"00" when dir_pixel_column >=3*(H_RES/4) and dir_pixel_column < 7*(H_RES/8) else --plava
+				 --x"ff" when dir_pixel_column >=7*(H_RES/8) and dir_pixel_column < H_RES else --crna
+				 --x"00";
+
+				
+  dir_blue <= x"00" when dir_pixel_column < x"50" else --bela
+				  x"00" when dir_pixel_column >= 80 and dir_pixel_column < 160 else --parametrizovati sa H_RES/4 (160) npr. --zuta
+				  x"ff" when dir_pixel_column >= 160 and dir_pixel_column < 240 else --tirkizna
+				  x"00" when dir_pixel_column >=240 and dir_pixel_column < 320 else --zelena
+				  x"ff" when dir_pixel_column >=320 and dir_pixel_column < 400 else --roza
+				  x"00" when dir_pixel_column >=400 and dir_pixel_column < 480 else --crvena
+				  x"ff" when dir_pixel_column >=480 and dir_pixel_column < 560 else --plava
+				  x"ff" when dir_pixel_column >=560 and dir_pixel_column < 640 else --crna
+				  x"00";
+				  
+	dir_green <= x"00" when dir_pixel_column < x"50" else --bela
+					 x"ff" when dir_pixel_column >= 80 and dir_pixel_column < 160 else --parametrizovati sa H_RES/4 (160) npr. --zuta
+					 x"ff" when dir_pixel_column >= 160 and dir_pixel_column < 240 else --tirkizna
+					 x"ff" when dir_pixel_column >=240 and dir_pixel_column < 320 else --zelena
+					 x"00" when dir_pixel_column >=320 and dir_pixel_column < 400 else --roza
+					 x"00" when dir_pixel_column >=400 and dir_pixel_column < 480 else --crvena
+					 x"00" when dir_pixel_column >=480 and dir_pixel_column < 560 else --plava
+					 x"ff" when dir_pixel_column >=560 and dir_pixel_column < 640 else --crna
+					 x"00";
  
   -- koristeci signale realizovati logiku koja pise po TXT_MEM
   --char_address
   --char_value
   --char_we
   
+  char_we <= '1';
+  char_value <= o"23" when char_address = 10 else
+					 o"01" when char_address = 11 else
+					 o"14" when char_address = 12 else
+					 o"05" when char_address = 13 else
+					 o"10" when char_address = 14 else
+					 o"40";
+  
   -- koristeci signale realizovati logiku koja pise po GRAPH_MEM
   --pixel_address
   --pixel_value
   --pixel_we
-  
+
+  pixel_we <= '1';
+  pixel_value <= x"FFFFFFFF" when pixel_address = 0 else
+					  x"FFFFFFFF" when pixel_address = 20 else
+					  x"FFFFFFFF" when pixel_address = 40 else
+					  x"FFFFFFFF" when pixel_address = 60 else
+					  x"FFFFFFFF" when pixel_address = 80 else
+					  x"FFFFFFFF" when pixel_address = 100 else
+					  x"FFFFFFFF" when pixel_address = 120 else
+					  x"FFFFFFFF" when pixel_address = 140 else
+					  x"FFFFFFFF" when pixel_address = 180 else
+					  x"FFFFFFFF" when pixel_address = 200 else
+					  x"FFFFFFFF" when pixel_address = 220 else
+					  x"FFFFFFFF" when pixel_address = 240 else
+					  x"FFFFFFFF" when pixel_address = 260 else
+					  x"FFFFFFFF" when pixel_address = 280 else
+					  x"FFFFFFFF" when pixel_address = 300 else
+					  x"FFFFFFFF" when pixel_address = 320 else
+						x"FFFFFFFF" when pixel_address = 340 else
+						x"FFFFFFFF" when pixel_address = 360 else
+						x"FFFFFFFF" when pixel_address = 380 else
+						x"FFFFFFFF" when pixel_address = 400 else
+						x"FFFFFFFF" when pixel_address = 420 else
+						x"FFFFFFFF" when pixel_address = 440 else
+						x"FFFFFFFF" when pixel_address = 460 else
+						x"FFFFFFFF" when pixel_address = 480 else
+						x"FFFFFFFF" ;
+						
+					  
   
 end rtl;
